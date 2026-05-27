@@ -170,22 +170,22 @@ def render_alignment_preview(aa_colors):
         cells = "".join(
             f'<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;'
             f'margin:2px;border-radius:6px;background:{aa_colors.get(residue, "#FFFFFF")};'
-            'color:#111827;font-weight:700;font-family:Consolas, monospace;">'
+            'border:1px solid rgba(15,23,42,0.08);color:#1F2937;font-weight:600;font-family:Consolas, monospace;">'
             f'{residue}</span>'
             for residue in seq
         )
         row_html.append(
             f'<div style="display:flex;align-items:center;gap:12px;margin:8px 0;">'
-            f'<div style="width:96px;color:#E5E7EB;font-weight:600;">{name}</div>'
+            f'<div style="width:96px;color:#AEB7C8;font-weight:600;">{name}</div>'
             f'<div>{cells}</div>'
             '</div>'
         )
 
     st.markdown(
         """
-        <div style="margin-top:16px;padding:16px 18px;border:1px solid #2C3144;border-radius:12px;background:linear-gradient(180deg,#171A24 0%,#10131B 100%);">
-            <div style="color:#E8EAF6;font-weight:700;margin-bottom:6px;">Preview</div>
-            <div style="color:#B8C0D9;font-size:0.92rem;margin-bottom:10px;">Fake alignment preview using the current amino acid colors.</div>
+        <div style="margin-top:16px;padding:16px 18px;border:1px solid #232938;border-radius:12px;background:linear-gradient(180deg,#151922 0%,#12161E 100%);">
+            <div style="color:#D6DCEA;font-weight:600;margin-bottom:6px;">Preview</div>
+            <div style="color:#8B95A7;font-size:0.92rem;margin-bottom:10px;">Fake alignment preview using the current amino acid colors.</div>
         </div>
         """,
         unsafe_allow_html=True,
