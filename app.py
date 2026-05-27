@@ -140,12 +140,22 @@ if 'domains' not in st.session_state:
         {"start": 523, "end": 546,  "label": "ZF10"},
     ]
 
+for aa, color in st.session_state.aa_colors.items():
+    picker_key = f"color_{aa}"
+    if picker_key not in st.session_state:
+        st.session_state[picker_key] = color
+
 # ── Helper: hex → openpyxl ARGB ──────────────────────────────────────────────
 def hex_to_argb(hex_color: str) -> str:
     h = hex_color.lstrip('#')
     if len(h) == 6:
         return 'FF' + h.upper()
     return h.upper()
+
+def apply_color_scheme(color_map):
+    st.session_state.aa_colors = color_map.copy()
+    for aa, color in color_map.items():
+        st.session_state[f"color_{aa}"] = color
 
 # ── Parsers ───────────────────────────────────────────────────────────────────
 def parse_fasta(content: str):
@@ -413,20 +423,20 @@ with tab_colors:
         key="selected_color_template",
     )
     if temp_col2.button("Apply template"):
-        st.session_state.aa_colors = COLOR_TEMPLATES[selected_template].copy()
+        apply_color_scheme(COLOR_TEMPLATES[selected_template])
         st.rerun()
 
     col_reset, _ = st.columns([1, 4])
     with col_reset:
         if st.button("Reset to defaults"):
-            st.session_state.aa_colors = DEFAULT_AA_COLORS.copy()
+            apply_color_scheme(DEFAULT_AA_COLORS)
             st.rerun()
 
     for group_name, aas in AA_GROUPS.items():
         st.markdown(f"**{group_name}**")
         cols = st.columns(len(aas))
         for col, aa in zip(cols, aas):
-            picked = col.color_picker(aa, value=st.session_state.aa_colors[aa], key=f"color_{aa}")
+            picked = col.color_picker(aa, key=f"color_{aa}")
             st.session_state.aa_colors[aa] = picked
 
 # ── Generate button ───────────────────────────────────────────────────────────
