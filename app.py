@@ -157,6 +157,41 @@ def apply_color_scheme(color_map):
     for aa, color in color_map.items():
         st.session_state[f"color_{aa}"] = color
 
+def render_alignment_preview(aa_colors):
+    preview_rows = [
+        ("Reference", "ACDEFGHIKLMNPQRSTVWY"),
+        ("Variant A", "ACD-FGHIKLMNPQKSTVWY"),
+        ("Variant B", "ACNEYGHI-LMNPQRSTAWY"),
+        ("Variant C", "ACDEWGHIKLM-PQRSAV-Y"),
+    ]
+
+    row_html = []
+    for name, seq in preview_rows:
+        cells = "".join(
+            f'<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;'
+            f'margin:2px;border-radius:6px;background:{aa_colors.get(residue, "#FFFFFF")};'
+            'color:#111827;font-weight:700;font-family:Consolas, monospace;">'
+            f'{residue}</span>'
+            for residue in seq
+        )
+        row_html.append(
+            f'<div style="display:flex;align-items:center;gap:12px;margin:8px 0;">'
+            f'<div style="width:96px;color:#E5E7EB;font-weight:600;">{name}</div>'
+            f'<div>{cells}</div>'
+            '</div>'
+        )
+
+    st.markdown(
+        """
+        <div style="margin-top:16px;padding:16px 18px;border:1px solid #2C3144;border-radius:12px;background:linear-gradient(180deg,#171A24 0%,#10131B 100%);">
+            <div style="color:#E8EAF6;font-weight:700;margin-bottom:6px;">Preview</div>
+            <div style="color:#B8C0D9;font-size:0.92rem;margin-bottom:10px;">Fake alignment preview using the current amino acid colors.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown("".join(row_html), unsafe_allow_html=True)
+
 # ── Parsers ───────────────────────────────────────────────────────────────────
 def parse_fasta(content: str):
     sequences = []
@@ -438,6 +473,8 @@ with tab_colors:
         for col, aa in zip(cols, aas):
             picked = col.color_picker(aa, key=f"color_{aa}")
             st.session_state.aa_colors[aa] = picked
+
+    render_alignment_preview(st.session_state.aa_colors)
 
 # ── Generate button ───────────────────────────────────────────────────────────
 st.markdown("---")
