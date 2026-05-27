@@ -67,6 +67,56 @@ AA_GROUPS = {
     "Gap":                ['-'],
 }
 
+COLOR_TEMPLATES = {
+    "Biochemical Groups": {
+        'A': '#D8E2DC', 'G': '#D8E2DC', 'V': '#D8E2DC', 'L': '#D8E2DC', 'I': '#D8E2DC', 'P': '#D8E2DC',
+        'S': '#D9F0FF', 'T': '#D9F0FF', 'C': '#D9F0FF', 'M': '#D9F0FF', 'N': '#D9F0FF', 'Q': '#D9F0FF',
+        'F': '#FFE8CC', 'W': '#FFE8CC', 'Y': '#FFE8CC', 'H': '#FFE8CC',
+        'K': '#F8D7FF', 'R': '#F8D7FF',
+        'D': '#FFD6D6', 'E': '#FFD6D6',
+        '-': '#FFFFFF',
+    },
+    "Ocean Breeze": {
+        'A': '#E3F2FD', 'C': '#E0F7FA',
+        'D': '#FFCDD2', 'E': '#F8BBD0',
+        'F': '#FFE0B2', 'G': '#E1F5FE',
+        'H': '#E8EAF6', 'I': '#D0F4DE',
+        'K': '#D1C4E9', 'L': '#C8E6C9',
+        'M': '#B2DFDB', 'N': '#DCEDC8',
+        'P': '#BBDEFB', 'Q': '#C5E1A5',
+        'R': '#E1BEE7', 'S': '#B3E5FC',
+        'T': '#B2EBF2', 'V': '#C8E6C9',
+        'W': '#FFF9C4', 'Y': '#FFE082',
+        '-': '#FFFFFF',
+    },
+    "Sunset Sorbet": {
+        'A': '#FFF3E0', 'C': '#FFE0B2',
+        'D': '#FFCDD2', 'E': '#EF9A9A',
+        'F': '#FFE082', 'G': '#F8BBD0',
+        'H': '#F3E5F5', 'I': '#FFECB3',
+        'K': '#E1BEE7', 'L': '#FFD180',
+        'M': '#FFCCBC', 'N': '#FCE4EC',
+        'P': '#FFAB91', 'Q': '#F8BBD0',
+        'R': '#CE93D8', 'S': '#FFCC80',
+        'T': '#FFE0B2', 'V': '#FFB74D',
+        'W': '#FFF59D', 'Y': '#FFE082',
+        '-': '#FFFFFF',
+    },
+    "Forest Mist": {
+        'A': '#E8F5E9', 'C': '#D0F0C0',
+        'D': '#FFEBEE', 'E': '#FDE2E4',
+        'F': '#F1F8E9', 'G': '#E0F2F1',
+        'H': '#E8F5E9', 'I': '#C8E6C9',
+        'K': '#D7CCC8', 'L': '#A5D6A7',
+        'M': '#B2DFDB', 'N': '#DCEDC8',
+        'P': '#C5E1A5', 'Q': '#E6EE9C',
+        'R': '#BCAAA4', 'S': '#C8E6C9',
+        'T': '#DCE775', 'V': '#AED581',
+        'W': '#F0F4C3', 'Y': '#FFF9C4',
+        '-': '#FFFFFF',
+    },
+}
+
 # ── Session state init ────────────────────────────────────────────────────────
 if 'aa_colors' not in st.session_state:
     st.session_state.aa_colors = DEFAULT_AA_COLORS.copy()
@@ -353,6 +403,18 @@ with tab_domains:
 # ── Tab 3: Colors ─────────────────────────────────────────────────────────────
 with tab_colors:
     st.markdown("Customize the fill color for each amino acid. Changes are reflected in the generated file.")
+
+    st.markdown("### Templates")
+    st.caption("Apply a starter palette, then fine-tune individual residues below.")
+    temp_col1, temp_col2, _ = st.columns([2.2, 1.2, 2])
+    selected_template = temp_col1.selectbox(
+        "Template color scheme",
+        options=list(COLOR_TEMPLATES.keys()),
+        key="selected_color_template",
+    )
+    if temp_col2.button("Apply template"):
+        st.session_state.aa_colors = COLOR_TEMPLATES[selected_template].copy()
+        st.rerun()
 
     col_reset, _ = st.columns([1, 4])
     with col_reset:
