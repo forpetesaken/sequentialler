@@ -1,0 +1,382 @@
+import streamlit as st
+import openpyxl
+from openpyxl.styles import PatternFill, Font, Alignment
+from openpyxl.formatting.rule import Rule, ColorScaleRule
+from openpyxl.styles.differential import DifferentialStyle
+from openpyxl.utils import get_column_letter
+import csv
+import io
+import re
+
+# ── Page config ──────────────────────────────────────────────────────────────
+st.set_page_config(
+    page_title="Alignment Formatter",
+    page_icon="🧬",
+    layout="wide",
+)
+
+# ── Styling ───────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+    .main { background: #0f1117; }
+    h1 { color: #e8eaf6; }
+    h2, h3 { color: #c5cae9; }
+    .stButton > button {
+        background: #3949ab;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        padding: 0.5rem 1.5rem;
+        font-weight: 600;
+    }
+    .stButton > button:hover { background: #5c6bc0; }
+    .domain-row {
+        display: flex; align-items: center; gap: 8px;
+        background: #1e2130; border-radius: 8px;
+        padding: 8px 12px; margin-bottom: 6px;
+    }
+    .info-box {
+        background: #1a237e22; border-left: 4px solid #3949ab;
+        padding: 12px 16px; border-radius: 4px; margin: 12px 0;
+    }
+    div[data-testid="stColorPicker"] label { font-size: 0.75rem; }
+</style>
+""", unsafe_allow_html=True)
+
+# ── Default amino acid colors ─────────────────────────────────────────────────
+DEFAULT_AA_COLORS = {
+    'A': '#E0E0E0', 'C': '#E0E0E0',
+    'D': '#FFC7CE', 'E': '#FFC7CE',
+    'F': '#FFEB9C', 'G': '#F9E6FE',
+    'H': '#F8F6DA', 'I': '#FCC8C8',
+    'K': '#D9E1F2', 'L': '#F7E6D9',
+    'M': '#F3FBD5', 'N': '#CEF6E1',
+    'P': '#D5DAFB', 'Q': '#DBF5EC',
+    'R': '#FCC8E1', 'S': '#BABCFE',
+    'T': '#FFFFC9', 'V': '#FCECC4',
+    'W': '#99CCFF', 'Y': '#FCE4D6',
+    '-': '#FFFFFF',
+}
+
+AA_GROUPS = {
+    "Nonpolar / Small":   ['A', 'G', 'V', 'L', 'I', 'P'],
+    "Polar uncharged":    ['S', 'T', 'C', 'M', 'N', 'Q'],
+    "Aromatic":           ['F', 'W', 'Y', 'H'],
+    "Positively charged": ['K', 'R'],
+    "Negatively charged": ['D', 'E'],
+    "Gap":                ['-'],
+}
+
+# ── Session state init ────────────────────────────────────────────────────────
+if 'aa_colors' not in st.session_state:
+    st.session_state.aa_colors = DEFAULT_AA_COLORS.copy()
+if 'domains' not in st.session_state:
+    st.session_state.domains = [
+        {"start": 226, "end": 228,  "label": "YXF"},
+        {"start": 244, "end": 244,  "label": "244"},
+        {"start": 250, "end": 250,  "label": "250"},
+        {"start": 253, "end": 253,  "label": "253"},
+        {"start": 256, "end": 256,  "label": "256"},
+        {"start": 258, "end": 260,  "label": "258-260"},
+        {"start": 266, "end": 288,  "label": "ZF1"},
+        {"start": 294, "end": 316,  "label": "ZF2"},
+        {"start": 322, "end": 345,  "label": "ZF3"},
+        {"start": 351, "end": 373,  "label": "ZF4"},
+        {"start": 379, "end": 401,  "label": "ZF5"},
+        {"start": 407, "end": 430,  "label": "ZF6"},
+        {"start": 437, "end": 460,  "label": "ZF7"},
+        {"start": 467, "end": 489,  "label": "ZF8"},
+        {"start": 495, "end": 517,  "label": "ZF9"},
+        {"start": 523, "end": 546,  "label": "ZF10"},
+    ]
+
+# ── Helper: hex → openpyxl ARGB ──────────────────────────────────────────────
+def hex_to_argb(hex_color: str) -> str:
+    h = hex_color.lstrip('#')
+    if len(h) == 6:
+        return 'FF' + h.upper()
+    return h.upper()
+
+# ── Parsers ───────────────────────────────────────────────────────────────────
+def parse_fasta(content: str):
+    sequences = []
+    current_name, current_seq = None, []
+    for line in content.splitlines():
+        line = line.strip()
+        if line.startswith('>'):
+            if current_name is not None:
+                sequences.append((current_name, ''.join(current_seq)))
+            current_name = line[1:]
+            current_seq = []
+        elif line:
+            current_seq.append(line)
+    if current_name is not None:
+        sequences.append((current_name, ''.join(current_seq)))
+    return sequences
+
+def parse_conservation(content: str):
+    data = {}
+    reader = csv.reader(content.splitlines())
+    for row in reader:
+        if row:
+            data[row[0]] = row[1:]
+    return data
+
+def get_positions(human_seq: str):
+    positions, pos = [], 1
+    for ch in human_seq:
+        if ch == '-':
+            positions.append(None)
+        else:
+            positions.append(pos)
+            pos += 1
+    return positions
+
+# ── Core Excel builder ────────────────────────────────────────────────────────
+def build_excel(sequences, conservation, aa_colors, domains):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Alignment"
+
+    # Find human sequence
+    human_seq = next(
+        (seq for name, seq in sequences if 'human' in name.lower() or 'homo' in name.lower()),
+        sequences[0][1]
+    )
+    positions = get_positions(human_seq)
+    pos_to_col = {pos: idx for idx, pos in enumerate(positions, start=2) if pos is not None}
+    max_col = len(human_seq) + 1
+
+    # ── Row 1: position numbers ───────────────────────────────────────────────
+    for col_idx, pos in enumerate(positions, start=2):
+        if pos is not None:
+            ws.cell(row=1, column=col_idx, value=pos)
+
+    # ── Sequence rows ─────────────────────────────────────────────────────────
+    current_row = 2
+    seq_start_row = 2
+    for seq_name, seq in sequences:
+        ws.cell(row=current_row, column=1, value=seq_name)
+        for col_idx, char in enumerate(seq, start=2):
+            ws.cell(row=current_row, column=col_idx, value=char)
+        current_row += 1
+    seq_end_row = current_row - 1
+
+    # ── Conservation rows ─────────────────────────────────────────────────────
+    conservation_rows = []
+    if conservation:
+        for metric, values in conservation.items():
+            if metric.lower() == 'metric':
+                continue
+            ws.cell(row=current_row, column=1, value=metric)
+            for col_idx, value in enumerate(values, start=2):
+                try:
+                    ws.cell(row=current_row, column=col_idx, value=float(value) if value else None)
+                except (ValueError, TypeError):
+                    ws.cell(row=current_row, column=col_idx, value=value)
+            conservation_rows.append(current_row)
+            current_row += 1
+
+    # ── Domain label row ──────────────────────────────────────────────────────
+    domain_row = current_row
+    ws.cell(row=domain_row, column=1, value="Domains")
+    ws.cell(row=domain_row, column=1).font = Font(bold=True)
+
+    for d in domains:
+        start_pos, end_pos, label = d["start"], d["end"], d["label"]
+        cols = [pos_to_col[p] for p in range(start_pos, end_pos + 1) if p in pos_to_col]
+        if not cols:
+            continue
+        mid_col = cols[len(cols) // 2]
+        ws.cell(row=domain_row, column=mid_col, value=label)
+        ws.cell(row=domain_row, column=mid_col).font = Font(bold=True)
+        # Bold position numbers for this range
+        for col in cols:
+            cell = ws.cell(row=1, column=col)
+            cell.font = Font(bold=True)
+
+    current_row += 1
+
+    # ── Conditional formatting: amino acids ───────────────────────────────────
+    cf_range = f"B{seq_start_row}:{get_column_letter(max_col)}{seq_end_row}"
+    for aa, hex_color in aa_colors.items():
+        argb = hex_to_argb(hex_color)
+        fill = PatternFill(start_color=argb, end_color=argb, fill_type='solid')
+        dxf = DifferentialStyle(fill=fill)
+        rule = Rule(type='containsText', operator='containsText', dxf=dxf)
+        rule.formula = [f'NOT(ISERROR(SEARCH("{aa}",B{seq_start_row})))']
+        rule.text = aa
+        ws.conditional_formatting.add(cf_range, rule)
+
+    # ── Color scale: conservation rows ───────────────────────────────────────
+    for row_idx in conservation_rows:
+        r_range = f"B{row_idx}:{get_column_letter(max_col)}{row_idx}"
+        ws.conditional_formatting.add(r_range, ColorScaleRule(
+            start_type='min',        start_color='FFFFFFFF',
+            mid_type='percentile',   mid_value=50, mid_color='FFFFEB84',
+            end_type='max',          end_color='FF63BE7B',
+        ))
+
+    # ── Cell formatting ───────────────────────────────────────────────────────
+    for row in ws.iter_rows(min_row=1, max_row=current_row, min_col=1, max_col=max_col):
+        for cell in row:
+            cell.alignment = Alignment(
+                horizontal='left' if cell.column == 1 else 'center',
+                vertical='center'
+            )
+
+    ws.column_dimensions['A'].width = 50
+    for col_idx in range(2, max_col + 1):
+        ws.column_dimensions[get_column_letter(col_idx)].width = 3
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+# ═════════════════════════════════════════════════════════════════════════════
+# UI
+# ═════════════════════════════════════════════════════════════════════════════
+
+st.title("🧬 Alignment Formatter")
+st.markdown("Upload a FASTA alignment and (optionally) conservation scores to generate a color-coded Excel workbook.")
+
+tab_files, tab_domains, tab_colors = st.tabs(["📁 Files", "📍 Domains & Highlights", "🎨 Amino Acid Colors"])
+
+# ── Tab 1: Files ──────────────────────────────────────────────────────────────
+with tab_files:
+    col1, col2 = st.columns(2)
+    with col1:
+        aln_file = st.file_uploader("Alignment file (.fas / .aln / .fasta)", type=["fas", "aln", "fasta", "txt"])
+    with col2:
+        csv_file = st.file_uploader("Conservation scores (.csv)  — optional", type=["csv"])
+
+    if aln_file:
+        sequences = parse_fasta(aln_file.read().decode('utf-8'))
+        st.success(f"✅ Loaded **{len(sequences)}** sequences  |  Length: **{len(sequences[0][1])}** aligned columns")
+        human = next((n for n, _ in sequences if 'human' in n.lower() or 'homo' in n.lower()), sequences[0][0])
+        st.info(f"Reference sequence (for numbering): **{human}**")
+        with st.expander("Preview sequences"):
+            for name, seq in sequences:
+                st.markdown(f"`{name}`")
+    
+    if csv_file:
+        conservation = parse_conservation(csv_file.read().decode('utf-8'))
+        metrics = [k for k in conservation if k.lower() != 'metric']
+        st.success(f"✅ Loaded conservation scores: {', '.join(metrics)}")
+
+# ── Tab 2: Domains ────────────────────────────────────────────────────────────
+with tab_domains:
+    st.markdown("""
+    <div class="info-box">
+    Define protein regions to <b>bold</b> and label in the output. Each domain highlights a range of human residue positions.
+    Single residues: set start = end.
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Header
+    hc = st.columns([1.2, 1.2, 2, 0.6])
+    hc[0].markdown("**Start residue**")
+    hc[1].markdown("**End residue**")
+    hc[2].markdown("**Label**")
+    hc[3].markdown("**Del**")
+
+    to_delete = []
+    for i, domain in enumerate(st.session_state.domains):
+        cols = st.columns([1.2, 1.2, 2, 0.6])
+        st.session_state.domains[i]["start"] = cols[0].number_input(
+            f"start_{i}", value=domain["start"], min_value=1, label_visibility="collapsed", key=f"ds_{i}"
+        )
+        st.session_state.domains[i]["end"] = cols[1].number_input(
+            f"end_{i}", value=domain["end"], min_value=1, label_visibility="collapsed", key=f"de_{i}"
+        )
+        st.session_state.domains[i]["label"] = cols[2].text_input(
+            f"label_{i}", value=domain["label"], label_visibility="collapsed", key=f"dl_{i}"
+        )
+        if cols[3].button("✕", key=f"del_{i}"):
+            to_delete.append(i)
+
+    for i in reversed(to_delete):
+        st.session_state.domains.pop(i)
+
+    col_add, col_clear = st.columns([1, 4])
+    with col_add:
+        if st.button("＋ Add domain"):
+            last = st.session_state.domains[-1] if st.session_state.domains else {"end": 0}
+            st.session_state.domains.append({"start": last["end"] + 1, "end": last["end"] + 10, "label": "New"})
+            st.rerun()
+    with col_clear:
+        if st.button("Clear all domains"):
+            st.session_state.domains = []
+            st.rerun()
+
+    st.markdown("---")
+    st.markdown("**Paste domain list** (one per line: `start-end Label` or `pos Label`)")
+    bulk = st.text_area("e.g.  `266-288 ZF1`  or  `244 K244`", height=120, label_visibility="collapsed")
+    if st.button("Import from text"):
+        new_domains = []
+        for line in bulk.strip().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            m = re.match(r'^(\d+)-(\d+)\s+(.+)$', line)
+            if m:
+                new_domains.append({"start": int(m.group(1)), "end": int(m.group(2)), "label": m.group(3).strip()})
+            else:
+                m2 = re.match(r'^(\d+)\s+(.+)$', line)
+                if m2:
+                    new_domains.append({"start": int(m2.group(1)), "end": int(m2.group(1)), "label": m2.group(2).strip()})
+        if new_domains:
+            st.session_state.domains.extend(new_domains)
+            st.success(f"Added {len(new_domains)} domains.")
+            st.rerun()
+
+# ── Tab 3: Colors ─────────────────────────────────────────────────────────────
+with tab_colors:
+    st.markdown("Customize the fill color for each amino acid. Changes are reflected in the generated file.")
+
+    col_reset, _ = st.columns([1, 4])
+    with col_reset:
+        if st.button("Reset to defaults"):
+            st.session_state.aa_colors = DEFAULT_AA_COLORS.copy()
+            st.rerun()
+
+    for group_name, aas in AA_GROUPS.items():
+        st.markdown(f"**{group_name}**")
+        cols = st.columns(len(aas))
+        for col, aa in zip(cols, aas):
+            picked = col.color_picker(aa, value=st.session_state.aa_colors[aa], key=f"color_{aa}")
+            st.session_state.aa_colors[aa] = picked
+
+# ── Generate button ───────────────────────────────────────────────────────────
+st.markdown("---")
+st.markdown("### Generate Excel")
+
+if st.button("⬇️  Generate & Download", use_container_width=True):
+    if not aln_file:
+        st.error("Please upload an alignment file first.")
+    else:
+        aln_file.seek(0)
+        sequences = parse_fasta(aln_file.read().decode('utf-8'))
+        conservation = {}
+        if csv_file:
+            csv_file.seek(0)
+            conservation = parse_conservation(csv_file.read().decode('utf-8'))
+
+        with st.spinner("Building Excel file…"):
+            buf = build_excel(
+                sequences,
+                conservation,
+                st.session_state.aa_colors,
+                st.session_state.domains,
+            )
+
+        base = aln_file.name.rsplit('.', 1)[0]
+        st.download_button(
+            label="📥 Download formatted alignment",
+            data=buf,
+            file_name=f"{base}_formatted.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+        st.success("Done! Click the button above to download your file.")
