@@ -285,9 +285,10 @@ with tab_files:
 
 # ── Tab 2: Domains ────────────────────────────────────────────────────────────
 with tab_domains:
+    st.caption("Residue positions and domain labels in this section align to the selected REFERENCE sequence from the Files tab.")
     st.markdown("""
     <div class="info-box">
-    Define protein regions to <b>bold</b> and label in the output. Each domain highlights a range of human residue positions.
+    Define protein regions to <b>bold</b> and label in the output. Each domain highlights a range of residue positions based on the selected <b>REFERENCE</b> sequence.
     Single residues: set start = end.
     </div>
     """, unsafe_allow_html=True)
@@ -329,7 +330,7 @@ with tab_domains:
             st.rerun()
 
     st.markdown("---")
-    st.markdown("**Paste domain list** (one per line: `start-end Label` or `pos Label`)")
+    st.markdown("**Paste domain list** (one per line: `start-end Label` or `pos Label`, using numbering from the selected `REFERENCE` sequence)")
     bulk = st.text_area("e.g.  `266-288 ZF1`  or  `244 K244`", height=120, label_visibility="collapsed")
     if st.button("Import from text"):
         new_domains = []
