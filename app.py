@@ -133,19 +133,25 @@ def get_positions(human_seq: str):
     return positions
 
 # ── Core Excel builder ────────────────────────────────────────────────────────
-def build_excel(sequences, conservation, aa_colors, domains):
+def build_excel(sequences, conservation, aa_colors, domains, reference_name=None):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Alignment"
 
-    # Find human sequence
-    human_seq = next(
-        (seq for name, seq in sequences if 'human' in name.lower() or 'homo' in name.lower()),
-        sequences[0][1]
-    )
-    positions = get_positions(human_seq)
+    # Use selected reference sequence for position numbering.
+    # Fallback: human/homo match, then the first sequence.
+    reference_seq = None
+    if reference_name:
+        reference_seq = next((seq for name, seq in sequences if name == reference_name), None)
+    if reference_seq is None:
+        reference_seq = next(
+            (seq for name, seq in sequences if 'human' in name.lower() or 'homo' in name.lower()),
+            sequences[0][1]
+        )
+
+    positions = get_positions(reference_seq)
     pos_to_col = {pos: idx for idx, pos in enumerate(positions, start=2) if pos is not None}
-    max_col = len(human_seq) + 1
+    max_col = len(reference_seq) + 1
 
     # ── Row 1: position numbers ───────────────────────────────────────────────
     for col_idx, pos in enumerate(positions, start=2):
@@ -254,8 +260,20 @@ with tab_files:
     if aln_file:
         sequences = parse_fasta(aln_file.read().decode('utf-8'))
         st.success(f"✅ Loaded **{len(sequences)}** sequences  |  Length: **{len(sequences[0][1])}** aligned columns")
-        human = next((n for n, _ in sequences if 'human' in n.lower() or 'homo' in n.lower()), sequences[0][0])
-        st.info(f"Reference sequence (for numbering): **{human}**")
+        default_reference = next((n for n, _ in sequences if 'human' in n.lower() or 'homo' in n.lower()), sequences[0][0])
+        seq_names = [name for name, _ in sequences]
+
+        # Keep selection stable across reruns if the chosen sequence still exists.
+        if st.session_state.get("reference_sequence") not in seq_names:
+            st.session_state.reference_sequence = default_reference
+
+        reference_name = st.selectbox(
+            "Reference sequence for numbering",
+            options=seq_names,
+            key="reference_sequence",
+            help="Residue numbering in row 1 follows this sequence (gaps are skipped).",
+        )
+        st.info(f"Reference sequence (for numbering): **{reference_name}**")
         with st.expander("Preview sequences"):
             for name, seq in sequences:
                 st.markdown(f"`{name}`")
@@ -369,6 +387,7 @@ if st.button("⬇️  Generate & Download", use_container_width=True):
                 conservation,
                 st.session_state.aa_colors,
                 st.session_state.domains,
+                st.session_state.get("reference_sequence"),
             )
 
         base = aln_file.name.rsplit('.', 1)[0]
