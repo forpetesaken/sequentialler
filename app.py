@@ -183,9 +183,9 @@ def render_alignment_preview(aa_colors):
 
     st.markdown(
         f"""
-        <div style="margin-top:16px;padding:16px 18px;border:1px solid #C9DDF5;border-radius:12px;background:linear-gradient(180deg,#EFF7FF 0%,#E3F0FF 100%);box-shadow:0 1px 2px rgba(32, 78, 131, 0.06);">
-            <div style="color:#335C85;font-weight:600;margin-bottom:6px;">Preview</div>
-            <div style="color:#58779B;font-size:0.92rem;margin-bottom:10px;">Fake alignment preview using the current amino acid colors.</div>
+        <div style="margin-top:16px;padding:16px 18px;border:1px solid #D8DEE6;border-radius:12px;background:linear-gradient(180deg,#F7F8FA 0%,#EEF1F4 100%);box-shadow:0 1px 2px rgba(15, 23, 42, 0.04);">
+            <div style="color:#4B5563;font-weight:600;margin-bottom:6px;">Preview</div>
+            <div style="color:#6B7280;font-size:0.92rem;margin-bottom:10px;">Fake alignment preview using the current amino acid colors.</div>
             <div>{''.join(row_html)}</div>
         </div>
         """,
