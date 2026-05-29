@@ -7,6 +7,8 @@ from openpyxl.utils import get_column_letter
 import csv
 import io
 import re
+import math
+from collections import Counter
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -217,6 +219,30 @@ def parse_conservation(content: str):
             data[row[0]] = row[1:]
     return data
 
+def compute_conservation(sequences):
+    """Auto-calculate per-column % conserved and Shannon entropy from aligned sequences."""
+    if not sequences:
+        return {}
+    aln_len = len(sequences[0][1])
+    pct_conserved = []
+    entropy_scores = []
+    for col in range(aln_len):
+        residues = [seq[col].upper() for _, seq in sequences if col < len(seq)]
+        non_gap = [r for r in residues if r != '-']
+        if not non_gap:
+            pct_conserved.append(None)
+            entropy_scores.append(None)
+            continue
+        counts = Counter(non_gap)
+        total = len(non_gap)
+        pct_conserved.append(round(counts.most_common(1)[0][1] / total, 4))
+        h = -sum((c / total) * math.log2(c / total) for c in counts.values())
+        entropy_scores.append(round(h, 4))
+    return {
+        "% Conserved": pct_conserved,
+        "Shannon Entropy": entropy_scores,
+    }
+
 def get_positions(human_seq: str):
     positions, pos = [], 1
     for ch in human_seq:
@@ -340,17 +366,13 @@ def build_excel(sequences, conservation, aa_colors, domains, reference_name=None
 # ═════════════════════════════════════════════════════════════════════════════
 
 st.title("🧬 Alignment Formatter")
-st.markdown("Upload a FASTA alignment and (optionally) conservation scores to generate a color-coded Excel workbook.")
+st.markdown("Upload a FASTA alignment to generate a color-coded Excel workbook with auto-calculated conservation scores.")
 
 tab_files, tab_domains, tab_colors = st.tabs(["📁 Files", "📍 Domains & Highlights", "🎨 Amino Acid Colors"])
 
 # ── Tab 1: Files ──────────────────────────────────────────────────────────────
 with tab_files:
-    col1, col2 = st.columns(2)
-    with col1:
-        aln_file = st.file_uploader("Alignment file (.fas / .aln / .fasta)", type=["fas", "aln", "fasta", "txt"])
-    with col2:
-        csv_file = st.file_uploader("Conservation scores (.csv)  — optional", type=["csv"])
+    aln_file = st.file_uploader("Alignment file (.fas / .aln / .fasta)", type=["fas", "aln", "fasta", "txt"])
 
     if aln_file:
         sequences = parse_fasta(aln_file.read().decode('utf-8'))
@@ -372,11 +394,6 @@ with tab_files:
         with st.expander("Preview sequences"):
             for name, seq in sequences:
                 st.markdown(f"`{name}`")
-    
-    if csv_file:
-        conservation = parse_conservation(csv_file.read().decode('utf-8'))
-        metrics = [k for k in conservation if k.lower() != 'metric']
-        st.success(f"✅ Loaded conservation scores: {', '.join(metrics)}")
 
 # ── Tab 2: Domains ────────────────────────────────────────────────────────────
 with tab_domains:
@@ -486,10 +503,7 @@ if st.button("⬇️  Generate & Download", use_container_width=True):
     else:
         aln_file.seek(0)
         sequences = parse_fasta(aln_file.read().decode('utf-8'))
-        conservation = {}
-        if csv_file:
-            csv_file.seek(0)
-            conservation = parse_conservation(csv_file.read().decode('utf-8'))
+        conservation = compute_conservation(sequences)
 
         with st.spinner("Building Excel file…"):
             buf = build_excel(
